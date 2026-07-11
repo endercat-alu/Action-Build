@@ -423,8 +423,21 @@ jobs:
         run: |
           git config --global user.name "Numbersf"
           git config --global user.email "263623064@qq.com"
-          mkdir kernel_workspace && cd kernel_workspace
-          git clone https://github.com/Numbersf/Action-Build.git -b SukiSU-Ultra
+          mkdir -p kernel_workspace && cd kernel_workspace
+          # maximize-build-space 会清空 checkout，必须重新拉取本仓库补丁/脚本
+          # 使用当前 workflow 仓库+提交，确保 fork 新增 patches 可用
+          REPO_URL="https://github.com/${{ github.repository }}.git"
+          REF_NAME="${{ github.ref_name }}"
+          SHA="${{ github.sha }}"
+          echo "克隆 Action-Build: $REPO_URL (ref=$REF_NAME sha=$SHA)"
+          if ! git clone --depth=1 -b "$REF_NAME" "$REPO_URL" Action-Build; then
+            echo "⚠️ 按分支浅克隆失败，回退完整克隆后 checkout SHA"
+            git clone "$REPO_URL" Action-Build
+            git -C Action-Build checkout "$SHA"
+          fi
+          test -f Action-Build/patches/ghostlock_cve_2026_43499.patch \
+            && echo "✅ GhostLock patch 已在克隆树中" \
+            || echo "::warning title=GhostLock Patch::克隆树中未找到 ghostlock 补丁，后续步骤将失败"
 
       - name: Fork Check
         run: |
@@ -864,13 +877,16 @@ jobs:
 
       - name: Apply GhostLock Security Fix
         run: |
-          # 优先用本仓库 checkout 的 patches（fork 新增补丁），回退到克隆的 Action-Build
-          if [ -f "${GITHUB_WORKSPACE}/patches/ghostlock_cve_2026_43499.patch" ]; then
+          PATCH_FILE="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches/ghostlock_cve_2026_43499.patch"
+          # checkout 可能已被 maximize-build-space 清空；优先克隆树，其次残留的 workspace
+          if [ ! -f "$PATCH_FILE" ] && [ -f "${GITHUB_WORKSPACE}/patches/ghostlock_cve_2026_43499.patch" ]; then
             PATCH_FILE="${GITHUB_WORKSPACE}/patches/ghostlock_cve_2026_43499.patch"
-          elif [ -f "${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches/ghostlock_cve_2026_43499.patch" ]; then
-            PATCH_FILE="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches/ghostlock_cve_2026_43499.patch"
-          else
+          fi
+          if [ ! -f "$PATCH_FILE" ]; then
             echo "❌ 未找到 ghostlock_cve_2026_43499.patch"
+            echo "查找结果:"
+            find "${GITHUB_WORKSPACE}" -name 'ghostlock_cve_2026_43499.patch' 2>/dev/null || true
+            ls -la "${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches" 2>/dev/null || true
             exit 1
           fi
           cd kernel_workspace/kernel_platform/common
