@@ -864,13 +864,21 @@ jobs:
 
       - name: Apply GhostLock Security Fix
         run: |
-          PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches"
+          # 优先用本仓库 checkout 的 patches（fork 新增补丁），回退到克隆的 Action-Build
+          if [ -f "${GITHUB_WORKSPACE}/patches/ghostlock_cve_2026_43499.patch" ]; then
+            PATCH_FILE="${GITHUB_WORKSPACE}/patches/ghostlock_cve_2026_43499.patch"
+          elif [ -f "${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches/ghostlock_cve_2026_43499.patch" ]; then
+            PATCH_FILE="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches/ghostlock_cve_2026_43499.patch"
+          else
+            echo "❌ 未找到 ghostlock_cve_2026_43499.patch"
+            exit 1
+          fi
           cd kernel_workspace/kernel_platform/common
-          echo "正在打 GhostLock (CVE-2026-43499 / CVE-2026-53166) 补丁"
+          echo "正在打 GhostLock (CVE-2026-43499 / CVE-2026-53166) 补丁: $PATCH_FILE"
           if grep -q 'waiter_task = waiter->task' kernel/locking/rtmutex.c && grep -q 'unlikely(ret < 0)' kernel/locking/rtmutex_api.c; then
             echo "✅ 源码已含 GhostLock 修复，跳过"
           else
-            patch -p1 --forward < "${PATCH_DIR}/ghostlock_cve_2026_43499.patch" || true
+            patch -p1 --forward < "$PATCH_FILE"
             echo "GhostLock_patch完成"
           fi
           source $REJ_CHECKER
