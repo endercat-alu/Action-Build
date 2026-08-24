@@ -21,7 +21,7 @@ check_rejects() {
     cat "$REJ_FILE"
     echo "::endgroup::"
   done <<< "$REJECT_FILES"
-  return 0
+  return 1
 }
 
 _reject_err_trap() {
